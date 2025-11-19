@@ -3,6 +3,8 @@ package com.nexus.investment_service.model;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Document(collection = "funding_requests")
 public class FundingRequest {
@@ -11,18 +13,14 @@ public class FundingRequest {
 
     private String title;
     private double requiredAmount;
-
-    // Tracks the total amount invested so far, initialized to 0.0
     private double currentFunded;
-
-    // The ID of the user who raised the request (Funder)
     private String funderId;
-
-    // Status can be PENDING, APPROVED, SETTLED, CANCELLED
     private String status;
-
     private LocalDateTime createdAt;
     private LocalDateTime deadline;
+
+    // List of investor IDs who have invested
+    private List<String> investorIds;
 
     // --- Getters and Setters ---
 
@@ -49,4 +47,17 @@ public class FundingRequest {
 
     public LocalDateTime getDeadline() { return deadline; }
     public void setDeadline(LocalDateTime deadline) { this.deadline = deadline; }
+
+    public List<String> getInvestorIds() { return investorIds; }
+    public void setInvestorIds(List<String> investorIds) { this.investorIds = investorIds; }
+
+    // Convenience to add an investor safely
+    public void addInvestorId(String investorId) {
+        if (this.investorIds == null) {
+            this.investorIds = new ArrayList<>();
+        }
+        if (!this.investorIds.contains(investorId)) {
+            this.investorIds.add(investorId);
+        }
+    }
 }

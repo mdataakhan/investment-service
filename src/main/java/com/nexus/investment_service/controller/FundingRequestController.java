@@ -1,6 +1,8 @@
 package com.nexus.investment_service.controller;
 
 import com.nexus.investment_service.dto.FundingRequestCreationDTO;
+import com.nexus.investment_service.dto.FundingRequestUpdateDTO;
+import com.nexus.investment_service.dto.FundingInvestmentDTO;
 import com.nexus.investment_service.model.FundingRequest;
 import com.nexus.investment_service.service.FundingRequestService;
 import org.springframework.http.HttpStatus;
@@ -25,20 +27,64 @@ public class FundingRequestController {
      */
     @PostMapping
     public ResponseEntity<FundingRequest> createFundingRequest(
-            // The Funder ID is extracted from the authenticated user's security context
-            // Using a RequestHeader as a mock extraction for demonstration
             @RequestHeader("X-Funder-Id") String funderId,
+            @Valid @RequestBody FundingRequestCreationDTO requestDTO) {
 
-            // The request body containing the funding details
-            @RequestBody FundingRequestCreationDTO requestDTO) {
-
-        // Delegate to the service layer
         FundingRequest newRequest = fundingRequestService.createFundingRequest(
                 funderId,
                 requestDTO
         );
 
-        // Return the created request object with HTTP 201 Created status
         return new ResponseEntity<>(newRequest, HttpStatus.CREATED);
+    }
+
+    /**
+     * Endpoint to retrieve a specific funding request by its ID.
+     * METHOD: GET
+     * PATH: /api/v1/funding-requests/{requestId}
+     */
+    @GetMapping("/{requestId}")
+    public ResponseEntity<FundingRequest> getFundingRequestById(@PathVariable String requestId) {
+
+        // Delegate the lookup to the service
+        FundingRequest request = fundingRequestService.getFundingRequestById(requestId);
+
+        // If the service throws a NotFound exception, Spring handles the 404 response.
+        return ResponseEntity.ok(request);
+    }
+
+    /**
+     * Endpoint to update an existing funding request.
+     * Only the original funder should be able to update their request.
+     * METHOD: PUT
+     * PATH: /api/v1/funding-requests/{requestId}
+     */
+    @PutMapping("/{requestId}")
+    public ResponseEntity<FundingRequest> updateFundingRequest(
+            @PathVariable String requestId,
+            @RequestHeader("X-Funder-Id") String funderId,
+            @Valid @RequestBody FundingRequestUpdateDTO updateDTO) {
+
+        // Delegate the update logic to the service
+        FundingRequest updatedRequest = fundingRequestService.updateFundingRequest(
+                requestId,
+                funderId,
+                updateDTO
+        );
+
+        return ResponseEntity.ok(updatedRequest);
+    }
+
+    /**
+     * Endpoint for an investor to invest in a funding request.
+     * METHOD: POST
+     * PATH: /api/v1/funding-requests/{requestId}/investment
+     */
+    @PostMapping("/{requestId}/investment")
+    public ResponseEntity<FundingRequest> investInFundingRequest(
+            @PathVariable String requestId,
+            @Valid @RequestBody FundingInvestmentDTO investmentDTO) {
+        FundingRequest updated = fundingRequestService.investInFundingRequest(requestId, investmentDTO);
+        return ResponseEntity.ok(updated);
     }
 }
