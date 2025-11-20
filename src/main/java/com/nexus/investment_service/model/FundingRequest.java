@@ -3,8 +3,8 @@ package com.nexus.investment_service.model;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 @Document(collection = "funding_requests")
 public class FundingRequest {
@@ -19,8 +19,33 @@ public class FundingRequest {
     private LocalDateTime createdAt;
     private LocalDateTime deadline;
 
-    // List of investor IDs who have invested
-    private List<String> investorIds;
+    // Map of investorId -> total invested amount
+    private Map<String, Double> investorAmounts;
+
+    // Total committed return (gross) to distribute to investors upon success
+    private double committedReturnAmount;
+
+    // Detailed description of the funding request
+    private String description;
+
+    // Flag indicating whether returns have been distributed
+    private boolean returnDistributed;
+
+    public FundingRequest() {
+        // no-args constructor for framework
+    }
+
+    public FundingRequest(String title, double requiredAmount, double committedReturnAmount, String description, LocalDateTime deadline, String funderId) {
+        this.title = title;
+        this.requiredAmount = requiredAmount;
+        this.committedReturnAmount = committedReturnAmount;
+        this.description = description;
+        this.deadline = deadline;
+        this.funderId = funderId;
+        this.currentFunded = 0.0;
+        this.investorAmounts = new HashMap<>();
+        this.returnDistributed = false;
+    }
 
     // --- Getters and Setters ---
 
@@ -48,16 +73,23 @@ public class FundingRequest {
     public LocalDateTime getDeadline() { return deadline; }
     public void setDeadline(LocalDateTime deadline) { this.deadline = deadline; }
 
-    public List<String> getInvestorIds() { return investorIds; }
-    public void setInvestorIds(List<String> investorIds) { this.investorIds = investorIds; }
+    public Map<String, Double> getInvestorAmounts() { return investorAmounts; }
+    public void setInvestorAmounts(Map<String, Double> investorAmounts) { this.investorAmounts = investorAmounts; }
 
-    // Convenience to add an investor safely
-    public void addInvestorId(String investorId) {
-        if (this.investorIds == null) {
-            this.investorIds = new ArrayList<>();
+    public double getCommittedReturnAmount() { return committedReturnAmount; }
+    public void setCommittedReturnAmount(double committedReturnAmount) { this.committedReturnAmount = committedReturnAmount; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+
+    public boolean isReturnDistributed() { return returnDistributed; }
+    public void setReturnDistributed(boolean returnDistributed) { this.returnDistributed = returnDistributed; }
+
+    // Convenience: update or insert investor amount (accumulate multiple investments)
+    public void updateInvestorAmount(String investorId, double amount) {
+        if (this.investorAmounts == null) {
+            this.investorAmounts = new HashMap<>();
         }
-        if (!this.investorIds.contains(investorId)) {
-            this.investorIds.add(investorId);
-        }
+        this.investorAmounts.merge(investorId, amount, Double::sum);
     }
 }

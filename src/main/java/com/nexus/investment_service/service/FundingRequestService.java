@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.HashMap;
 
 import static com.nexus.investment_service.utils.Constants.*;
 
@@ -35,14 +36,18 @@ public class FundingRequestService {
     }
 
     /**
-     * Creates a new funding request.
+     * Creates a new funding request with extended fields.
      */
     public FundingRequest createFundingRequest(String funderId, FundingRequestCreationDTO dto) {
-        log.info("Creating funding request funderId={} title={} requiredAmount={} deadline={}", funderId, dto.getTitle(), dto.getRequiredAmount(), dto.getDeadline());
+        log.info("Creating funding request funderId={} title={} requiredAmount={} deadline={} committedReturnAmount={}", funderId, dto.getTitle(), dto.getRequiredAmount(), dto.getDeadline(), dto.getCommittedReturnAmount());
         FundingRequest request = new FundingRequest();
         request.setTitle(dto.getTitle());
         request.setRequiredAmount(dto.getRequiredAmount());
         request.setDeadline(dto.getDeadline());
+        request.setCommittedReturnAmount(dto.getCommittedReturnAmount());
+        request.setDescription(dto.getDescription());
+        request.setInvestorAmounts(new HashMap<>()); // initialize map
+        request.setReturnDistributed(false);
         request.setFunderId(funderId);
         request.setCreatedAt(LocalDateTime.now());
         request.setCurrentFunded(0.0);
@@ -73,7 +78,7 @@ public class FundingRequestService {
     }
 
     /**
-     * Updates an existing funding request, ensuring the funder is the owner.
+     * Updates an existing funding request (only when OPEN).
      */
     public FundingRequest updateFundingRequest(String requestId, String funderId, FundingRequestUpdateDTO dto) {
         log.info("Updating funding request id={} by funderId={}", requestId, funderId);
@@ -88,6 +93,14 @@ public class FundingRequestService {
         if (dto.getDeadline() != null) {
             log.debug("Updating deadline for funding request id={}", requestId);
             existingRequest.setDeadline(dto.getDeadline());
+        }
+        if (dto.getDescription() != null && !dto.getDescription().isEmpty()) {
+            log.debug("Updating description for funding request id={}", requestId);
+            existingRequest.setDescription(dto.getDescription());
+        }
+        if (dto.getCommittedReturnAmount() != null) {
+            log.debug("Updating committedReturnAmount for funding request id={}", requestId);
+            existingRequest.setCommittedReturnAmount(dto.getCommittedReturnAmount());
         }
 
         FundingRequest saved = fundingRequestRepository.save(existingRequest);
@@ -128,14 +141,32 @@ public class FundingRequestService {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "User service error: " + e.getStatusCode());
         }
 
-        request.setCurrentFunded(request.getCurrentFunded() + Math.abs(walletAdjustment));
-        request.addInvestorId(investorId);
+        double investedAmount = Math.abs(walletAdjustment); // walletAdjustment is negative
+        request.setCurrentFunded(request.getCurrentFunded() + investedAmount);
+        request.updateInvestorAmount(investorId, investedAmount);
         if (request.getCurrentFunded() >= request.getRequiredAmount()) {
             request.setStatus(STATUS_FUNDED);
             log.info("Funding request fully funded id={}", requestId);
         }
         FundingRequest saved = fundingRequestRepository.save(request);
         log.info("Recorded investment requestId={} newCurrentFunded={}", requestId, saved.getCurrentFunded());
+        return saved;
+    }
+
+    /**
+     * Marks that returns have been distributed.
+     */
+    public FundingRequest markReturnsDistributed(String requestId) {
+        FundingRequest request = getFundingRequestById(requestId);
+        if (!STATUS_FUNDED.equals(request.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot distribute returns for a request that is not FUNDED.");
+        }
+        if (request.isReturnDistributed()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Returns already distributed for this request.");
+        }
+        request.setReturnDistributed(true);
+        FundingRequest saved = fundingRequestRepository.save(request);
+        log.info("Returns marked as distributed requestId={}", requestId);
         return saved;
     }
 }

@@ -1,6 +1,7 @@
 package com.nexus.investment_service.dto;
 
 import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 
@@ -15,6 +16,11 @@ public class FundingRequestUpdateDTO {
 
     @Future(message = "Deadline must be in the future")
     private LocalDateTime deadline;
+
+    @Min(value = 0, message = "Committed return amount must be non-negative if provided")
+    private Double committedReturnAmount;
+
+    private String description; // optional
 
     // --- Getters and Setters ---
 
@@ -32,5 +38,21 @@ public class FundingRequestUpdateDTO {
 
     public void setDeadline(LocalDateTime deadline) {
         this.deadline = deadline;
+    }
+
+    public Double getCommittedReturnAmount() {
+        return committedReturnAmount;
+    }
+
+    public void setCommittedReturnAmount(Double committedReturnAmount) {
+        this.committedReturnAmount = committedReturnAmount;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

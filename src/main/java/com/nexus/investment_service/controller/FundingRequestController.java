@@ -50,8 +50,8 @@ public class FundingRequestController {
     @PutMapping("/{requestId}")
     public ResponseEntity<FundingRequest> updateFundingRequest(
             @PathVariable String requestId,
-            @RequestHeader("X-Funder-Id") String funderId,
-            @Valid @RequestBody FundingRequestUpdateDTO updateDTO) {
+            @RequestHeader("X-User-Id") String funderId,
+            @RequestBody FundingRequestUpdateDTO updateDTO) {
         log.info("[HTTP] Update funding request id={} funderId={} title={} deadline={}", requestId, funderId, updateDTO.getTitle(), updateDTO.getDeadline());
         FundingRequest updatedRequest = fundingRequestService.updateFundingRequest(requestId, funderId, updateDTO);
         return ResponseEntity.ok(updatedRequest);
