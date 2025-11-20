@@ -28,7 +28,7 @@ public class FundingRequestController {
     @PostMapping
     public ResponseEntity<FundingRequest> createFundingRequest(
             @RequestHeader("X-Funder-Id") String funderId,
-            @Valid @RequestBody FundingRequestCreationDTO requestDTO) {
+            @RequestBody FundingRequestCreationDTO requestDTO) {
 
         FundingRequest newRequest = fundingRequestService.createFundingRequest(
                 funderId,
@@ -83,7 +83,7 @@ public class FundingRequestController {
     @PostMapping("/{requestId}/investment")
     public ResponseEntity<FundingRequest> investInFundingRequest(
             @PathVariable String requestId,
-            @Valid @RequestBody FundingInvestmentDTO investmentDTO) {
+            @RequestBody FundingInvestmentDTO investmentDTO) {
         FundingRequest updated = fundingRequestService.investInFundingRequest(requestId, investmentDTO);
         return ResponseEntity.ok(updated);
     }

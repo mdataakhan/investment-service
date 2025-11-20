@@ -3,33 +3,35 @@ package com.nexus.investment_service.service;
 import com.nexus.investment_service.dto.FundingRequestCreationDTO;
 import com.nexus.investment_service.dto.FundingRequestUpdateDTO;
 import com.nexus.investment_service.dto.FundingInvestmentDTO;
+import com.nexus.investment_service.dto.UserUpdateRequestDTO;
 import com.nexus.investment_service.model.FundingRequest;
 import com.nexus.investment_service.repository.FundingRequestRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
+
+import static com.nexus.investment_service.utils.Constants.*;
 
 @Service
 public class FundingRequestService {
 
     private final FundingRequestRepository fundingRequestRepository;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final WebClient webClient;
 
     // Status constants for the Funding Request
-    public static final String STATUS_OPEN = "OPEN";
-    public static final String STATUS_FUNDED = "FUNDED";
-    public static final String STATUS_CLOSED = "CLOSED";
+
 
     private final String userServiceBaseUrl = "http://localhost:3000/api/v1/users";
 
     public FundingRequestService(FundingRequestRepository fundingRequestRepository) {
         this.fundingRequestRepository = fundingRequestRepository;
+        this.webClient = WebClient.builder().baseUrl(USER_SERVICE_BASE_URL).build();
     }
 
     /**
@@ -98,35 +100,41 @@ public class FundingRequestService {
         }
 
         double remaining = request.getRequiredAmount() - request.getCurrentFunded();
-        if (investmentDTO.getAmount() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Investment amount must be positive.");
+        double walletAdjustment = investmentDTO.getWalletAdjustment();
+
+        if (walletAdjustment >= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "walletAdjustment must be negative for deduction.");
         }
-        if (investmentDTO.getAmount() > remaining) {
+        if (Math.abs(walletAdjustment) > remaining) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Investment exceeds remaining required amount. Remaining: " + remaining);
         }
 
         String investorId = investmentDTO.getInvestorId();
-        String userUrl = userServiceBaseUrl + "/" + investorId;
 
-        Map<String, Object> userUpdatePayload = new HashMap<>();
-        userUpdatePayload.put("walletBalance", investmentDTO.getAmount()); // interpreted by user service as amount to deduct
+        UserUpdateRequestDTO userUpdate = new UserUpdateRequestDTO();
+        userUpdate.setWalletAdjustment(BigDecimal.valueOf(walletAdjustment)); // negative value for deduction
+        userUpdate.setFundingRequestIds(List.of(requestId));
+
         try {
-            ResponseEntity<Void> response = restTemplate.postForEntity(userUrl + "/deduct-wallet", userUpdatePayload, Void.class);
-            if (!response.getStatusCode().is2xxSuccessful()) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "User service rejected wallet deduction.");
-            }
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode().value() == 400) {
+            webClient.put()
+                    .uri("/" + investorId)
+                    .bodyValue(userUpdate)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient wallet balance.");
             }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "User service error: " + e.getStatusCode());
         }
 
-        request.setCurrentFunded(request.getCurrentFunded() + investmentDTO.getAmount());
-        request.addInvestorId(investmentDTO.getInvestorId());
+        request.setCurrentFunded(request.getCurrentFunded() + Math.abs(walletAdjustment));
+        request.addInvestorId(investorId);
         if (request.getCurrentFunded() >= request.getRequiredAmount()) {
             request.setStatus(STATUS_FUNDED);
         }
         return fundingRequestRepository.save(request);
     }
+
 }
