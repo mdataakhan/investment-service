@@ -112,11 +112,20 @@ public class FundingRequestService {
         updateWallet(investorId, userUpdate);
 
         double investedAmount = Math.abs(walletAdjustment); // walletAdjustment is negative
-        request.setCurrentFunded(request.getCurrentFunded() + investedAmount);
+        double newTotalFunded = request.getCurrentFunded() + investedAmount;
+        boolean willBecomeFunded = newTotalFunded >= request.getRequiredAmount() && !STATUS_FUNDED.equals(request.getStatus());
+        request.setCurrentFunded(newTotalFunded);
         request.updateInvestorAmount(investorId, investedAmount);
-        if (request.getCurrentFunded() >= request.getRequiredAmount()) {
+        if (willBecomeFunded) {
             request.setStatus(STATUS_FUNDED);
-            log.info("Funding request fully funded id={}", requestId);
+            log.info("Funding request fully funded id={} totalRaised={}", requestId, request.getCurrentFunded());
+            // Credit funder's wallet with the raised principal amount (total funds raised)
+            String funderId = request.getFunderId();
+            UserUpdateRequestDTO funderCredit = new UserUpdateRequestDTO();
+            funderCredit.setWalletAdjustment(BigDecimal.valueOf(request.getCurrentFunded()));
+            funderCredit.setFundingRequestIds(List.of(requestId));
+            log.info("Crediting funderId={} raisedPrincipal={} for requestId={}", funderId, request.getCurrentFunded(), requestId);
+            updateWallet(funderId, funderCredit);
         }
         FundingRequest saved = fundingRequestRepository.save(request);
         log.info("Recorded investment requestId={} newCurrentFunded={}", requestId, saved.getCurrentFunded());
@@ -124,7 +133,7 @@ public class FundingRequestService {
     }
 
     /**
-     * Distributes returns (principal + pro-rata committed return) to all investors and marks distributed.
+     * Distributes returns (principal + pro-rata committed return) to all investors and debits funder first.
      */
     public FundingRequest distributeReturns(String requestId) {
         FundingRequest request = getFundingRequestById(requestId);
@@ -137,16 +146,26 @@ public class FundingRequestService {
         if (request.getInvestorAmounts() == null || request.getInvestorAmounts().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No investors to distribute returns to.");
         }
-        double required = request.getRequiredAmount();
+        double totalPrincipal = request.getCurrentFunded();
         double committedReturn = request.getCommittedReturnAmount();
-        log.info("Distributing returns requestId={} committedReturnAmount={} investorCount={}", requestId, committedReturn, request.getInvestorAmounts().size());
+        double totalPayout = totalPrincipal + committedReturn; // amount leaving funder
+        log.info("Starting return distribution requestId={} principal={} committedReturn={} totalPayout={} investors={}", requestId, totalPrincipal, committedReturn, totalPayout, request.getInvestorAmounts().size());
 
+        // Debit funder's wallet first (fail-fast if insufficient)
+        String funderId = request.getFunderId();
+        UserUpdateRequestDTO funderDebit = new UserUpdateRequestDTO();
+        funderDebit.setWalletAdjustment(BigDecimal.valueOf(-totalPayout)); // negative to deduct
+        funderDebit.setFundingRequestIds(List.of(requestId));
+        log.info("Debiting funderId={} totalPayout={} for distribution requestId={}", funderId, totalPayout, requestId);
+        updateWallet(funderId, funderDebit);
+
+        // Credit each investor with principal + pro-rata return
         request.getInvestorAmounts().forEach((investorId, investedPrincipal) -> {
-            double ratio = investedPrincipal / required;
+            double ratio = investedPrincipal / totalPrincipal; // sum ratios ~ 1.0
             double returnShare = ratio * committedReturn;
             double totalCredit = investedPrincipal + returnShare;
             UserUpdateRequestDTO creditPayload = new UserUpdateRequestDTO();
-            creditPayload.setWalletAdjustment(BigDecimal.valueOf(totalCredit)); // positive credit
+            creditPayload.setWalletAdjustment(BigDecimal.valueOf(totalCredit));
             creditPayload.setFundingRequestIds(List.of(requestId));
             log.info("Crediting investorId={} principal={} returnShare={} totalCredit={}", investorId, investedPrincipal, returnShare, totalCredit);
             updateWallet(investorId, creditPayload);
@@ -158,7 +177,6 @@ public class FundingRequestService {
         return saved;
     }
 
-
     private void updateWallet(String investorId, UserUpdateRequestDTO userUpdate) {
         try {
             webClient.put()
@@ -167,7 +185,7 @@ public class FundingRequestService {
                     .retrieve()
                     .toBodilessEntity()
                     .block();
-            log.debug("Wallet update successful investorId={}", investorId);
+            log.info("Wallet update successful investorId={}", investorId);
         } catch (WebClientResponseException e) {
             if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
                 log.warn("Wallet update rejected investorId={} statusCode={}", investorId, e.getStatusCode());
