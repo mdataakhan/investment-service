@@ -35,9 +35,6 @@ public class FundingRequestService {
         this.webClient = webClient;
     }
 
-    /**
-     * Creates a new funding request with extended fields.
-     */
     public FundingRequest createFundingRequest(String funderId, FundingRequestCreationDTO dto) {
         log.info("Creating funding request funderId={} title={} requiredAmount={} deadline={} committedReturnAmount={}", funderId, dto.getTitle(), dto.getRequiredAmount(), dto.getDeadline(), dto.getCommittedReturnAmount());
         FundingRequest request = new FundingRequest();
@@ -46,7 +43,7 @@ public class FundingRequestService {
         request.setDeadline(dto.getDeadline());
         request.setCommittedReturnAmount(dto.getCommittedReturnAmount());
         request.setDescription(dto.getDescription());
-        request.setInvestorAmounts(new HashMap<>()); // initialize map
+        request.setInvestorAmounts(new HashMap<>());
         request.setReturnDistributed(false);
         request.setFunderId(funderId);
         request.setCreatedAt(LocalDateTime.now());
@@ -57,9 +54,6 @@ public class FundingRequestService {
         return saved;
     }
 
-    /**
-     * Retrieves a funding request by its ID.
-     */
     public FundingRequest getFundingRequestById(String id) {
         log.debug("Fetching funding request id={}", id);
         return fundingRequestRepository.findById(id)
@@ -69,17 +63,11 @@ public class FundingRequestService {
                 });
     }
 
-    /**
-     * Retrieves all funding requests.
-     */
     public List<FundingRequest> getAllFundingRequests() {
         log.debug("Fetching all funding requests");
         return fundingRequestRepository.findAll();
     }
 
-    /**
-     * Updates an existing funding request (only when OPEN).
-     */
     public FundingRequest updateFundingRequest(String requestId, String funderId, FundingRequestUpdateDTO dto) {
         log.info("Updating funding request id={} by funderId={}", requestId, funderId);
         FundingRequest existingRequest = getFundingRequestById(requestId);
@@ -108,9 +96,6 @@ public class FundingRequestService {
         return saved;
     }
 
-    /**
-     * Investor invests in a funding request. Validates availability and calls User Service to deduct wallet balance.
-     */
     public FundingRequest investInFundingRequest(String requestId, FundingInvestmentDTO investmentDTO) {
         log.info("Investment attempt requestId={} investorId={} walletAdjustment={}", requestId, investmentDTO.getInvestorId(), investmentDTO.getWalletAdjustment());
         FundingRequest request = getFundingRequestById(requestId);
@@ -124,22 +109,7 @@ public class FundingRequestService {
         userUpdate.setWalletAdjustment(BigDecimal.valueOf(walletAdjustment)); // negative value for deduction
         userUpdate.setFundingRequestIds(List.of(requestId));
 
-        try {
-            webClient.put()
-                    .uri("/" + investorId)
-                    .bodyValue(userUpdate)
-                    .retrieve()
-                    .toBodilessEntity()
-                    .block();
-            log.debug("Wallet deduction successful investorId={}", investorId);
-        } catch (WebClientResponseException e) {
-            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
-                log.warn("Insufficient wallet balance investorId={} statusCode={}", investorId, e.getStatusCode());
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Insufficient wallet balance.");
-            }
-            log.error("User service error investorId={} statusCode={} body={}", investorId, e.getStatusCode(), e.getResponseBodyAsString());
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "User service error: " + e.getStatusCode());
-        }
+        updateWallet(investorId, userUpdate);
 
         double investedAmount = Math.abs(walletAdjustment); // walletAdjustment is negative
         request.setCurrentFunded(request.getCurrentFunded() + investedAmount);
@@ -154,9 +124,9 @@ public class FundingRequestService {
     }
 
     /**
-     * Marks that returns have been distributed.
+     * Distributes returns (principal + pro-rata committed return) to all investors and marks distributed.
      */
-    public FundingRequest markReturnsDistributed(String requestId) {
+    public FundingRequest distributeReturns(String requestId) {
         FundingRequest request = getFundingRequestById(requestId);
         if (!STATUS_FUNDED.equals(request.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot distribute returns for a request that is not FUNDED.");
@@ -164,10 +134,48 @@ public class FundingRequestService {
         if (request.isReturnDistributed()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Returns already distributed for this request.");
         }
+        if (request.getInvestorAmounts() == null || request.getInvestorAmounts().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No investors to distribute returns to.");
+        }
+        double required = request.getRequiredAmount();
+        double committedReturn = request.getCommittedReturnAmount();
+        log.info("Distributing returns requestId={} committedReturnAmount={} investorCount={}", requestId, committedReturn, request.getInvestorAmounts().size());
+
+        request.getInvestorAmounts().forEach((investorId, investedPrincipal) -> {
+            double ratio = investedPrincipal / required;
+            double returnShare = ratio * committedReturn;
+            double totalCredit = investedPrincipal + returnShare;
+            UserUpdateRequestDTO creditPayload = new UserUpdateRequestDTO();
+            creditPayload.setWalletAdjustment(BigDecimal.valueOf(totalCredit)); // positive credit
+            creditPayload.setFundingRequestIds(List.of(requestId));
+            log.info("Crediting investorId={} principal={} returnShare={} totalCredit={}", investorId, investedPrincipal, returnShare, totalCredit);
+            updateWallet(investorId, creditPayload);
+        });
+
         request.setReturnDistributed(true);
         FundingRequest saved = fundingRequestRepository.save(request);
-        log.info("Returns marked as distributed requestId={}", requestId);
+        log.info("Return distribution complete requestId={}", requestId);
         return saved;
+    }
+
+
+    private void updateWallet(String investorId, UserUpdateRequestDTO userUpdate) {
+        try {
+            webClient.put()
+                    .uri("/" + investorId)
+                    .bodyValue(userUpdate)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+            log.debug("Wallet update successful investorId={}", investorId);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
+                log.warn("Wallet update rejected investorId={} statusCode={}", investorId, e.getStatusCode());
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Wallet update failed.");
+            }
+            log.error("User service error investorId={} statusCode={} body={}", investorId, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "User service error: " + e.getStatusCode());
+        }
     }
 }
 

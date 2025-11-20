@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -63,6 +62,13 @@ public class FundingRequestController {
             @RequestBody FundingInvestmentDTO investmentDTO) {
         log.info("[HTTP] Invest in funding request id={} investorId={} walletAdjustment={}", requestId, investmentDTO.getInvestorId(), investmentDTO.getWalletAdjustment());
         FundingRequest updated = fundingRequestService.investInFundingRequest(requestId, investmentDTO);
+        return ResponseEntity.ok(updated);
+    }
+
+    @PostMapping("/{requestId}/distribute-returns")
+    public ResponseEntity<FundingRequest> distributeReturns(@PathVariable String requestId) {
+        log.info("[HTTP] Distribute returns funding request id={}", requestId);
+        FundingRequest updated = fundingRequestService.distributeReturns(requestId);
         return ResponseEntity.ok(updated);
     }
 }
