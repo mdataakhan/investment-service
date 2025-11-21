@@ -59,8 +59,10 @@ public class FundingRequestController {
     @PostMapping("/{requestId}/investment")
     public ResponseEntity<FundingRequest> investInFundingRequest(
             @PathVariable String requestId,
+            @RequestHeader("X-User-Id") String investorId,
             @RequestBody FundingInvestmentDTO investmentDTO) {
-        log.info("[HTTP] Invest in funding request id={} investorId={} walletAdjustment={}", requestId, investmentDTO.getInvestorId(), investmentDTO.getWalletAdjustment());
+        investmentDTO.setInvestorId(investorId);
+        log.info("[HTTP] Invest in funding request id={} investorId={} walletAdjustment={}", requestId, investorId, investmentDTO.getWalletAdjustment());
         FundingRequest updated = fundingRequestService.investInFundingRequest(requestId, investmentDTO);
         return ResponseEntity.ok(updated);
     }
