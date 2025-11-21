@@ -26,7 +26,7 @@ public class FundingRequestController {
 
     @PostMapping
     public ResponseEntity<FundingRequest> createFundingRequest(
-            @RequestHeader("X-Funder-Id") String funderId,
+            @RequestHeader("X-User-Id") String funderId,
             @RequestBody FundingRequestCreationDTO requestDTO) {
         log.info("[HTTP] Create funding request funderId={} title={}", funderId, requestDTO.getTitle());
         FundingRequest newRequest = fundingRequestService.createFundingRequest(funderId, requestDTO);
