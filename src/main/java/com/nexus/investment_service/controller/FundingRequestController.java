@@ -15,6 +15,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/funding-requests")
+@CrossOrigin("*")
 public class FundingRequestController {
 
     private static final Logger log = LoggerFactory.getLogger(FundingRequestController.class);
