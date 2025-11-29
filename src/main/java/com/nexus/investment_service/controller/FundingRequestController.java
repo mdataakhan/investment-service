@@ -74,5 +74,11 @@ public class FundingRequestController {
         FundingRequest updated = fundingRequestService.distributeReturns(requestId);
         return ResponseEntity.ok(updated);
     }
-}
 
+    @GetMapping("/mine")
+    public ResponseEntity<List<FundingRequest>> getMyFundingRequests(@RequestHeader("X-User-Id") String funderId) {
+        log.info("[HTTP] Get funding requests by funderId={}", funderId);
+        List<FundingRequest> requests = fundingRequestService.getFundingRequestsByFunderId(funderId);
+        return ResponseEntity.ok(requests);
+    }
+}

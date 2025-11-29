@@ -195,5 +195,10 @@ public class FundingRequestService {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "User service error: " + e.getStatusCode());
         }
     }
+
+    public List<FundingRequest> getFundingRequestsByFunderId(String funderId) {
+        log.info("Fetching funding requests by funderId={}", funderId);
+        return fundingRequestRepository.findByFunderId(funderId);
+    }
 }
 
